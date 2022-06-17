@@ -15,7 +15,12 @@ class MainController{
     const SITE_URL = 'http://localhost';
 
     function logout(){
+        $user = new User();
+        $user->setLogin($_COOKIE['loginName']);
+        $user->setLoginHash($_COOKIE['loginHash']);
+        $user->unLogin();
         setcookie('loginName', '', time() - 36000, '/');
+        setcookie('loginHash', '', time() - 36000, '/');
         header('Location: '.self::SITE_URL);
     }
 
@@ -25,6 +30,7 @@ class MainController{
         $User->setPass($password);
         $currentUser=$User->findByLoginPass();
         if ($currentUser!=NULL){
+            setcookie('loginHash', $currentUser->newLogin($_SERVER['REMOTE_ADDR']));
             setcookie('loginName', $currentUser->getLogin());
         }
         header('Location: '.self::SITE_URL);
@@ -69,10 +75,14 @@ class MainController{
         
         $logger = new Logger('main');
         $logger->pushHandler(new StreamHandler(dirname(__DIR__, 2) . '/logs/app.log', Logger::INFO));
-
         $User = new User();
-
-        echo $template->render(['logged' => isset($_COOKIE['loginName']), 
+        $loged = false;
+        if(isset($_COOKIE['loginName']) && isset($_COOKIE['loginHash'])){
+            $User->setLogin($_COOKIE['loginName']);
+            $User->setLoginHash($_COOKIE['loginHash']);
+            $loged = $User->checkLoginValid();
+        }
+        echo $template->render(['logged' => $loged,
                                 'loginName'=>$_COOKIE['loginName'],
                                 'users'=>$User->AllUsers(),
                                 'messages'=>$this->readSQL(),
@@ -101,9 +111,16 @@ class MainController{
     }
 
     function send($message_text, $author){
-        $message = new Message(date("Y-m-d H:i:s"), $author, $message_text, null);
-        $mr = new MessageRepository();
-        $mr->add($message);
+        $User = new User();
+        $User->setLogin($author);
+        if(isset($_COOKIE['loginHash'])){
+            $User->setLoginHash($_COOKIE['loginHash']);
+        }
+        if($User->checkLoginValid()){
+            $message = new Message(date("Y-m-d H:i:s"), $author, $message_text, null);
+            $mr = new MessageRepository();
+            $mr->add($message);
+        }
         header('Location: '.self::SITE_URL);
     }
 
@@ -118,13 +135,23 @@ class MainController{
     function delete($login){
         $User = new User();
         $User->setLogin($login);
-        $User->delete();
-        $this->logout();
+        $User->setLoginHash($_COOKIE['loginHash']);
+        if($User->checkLoginValid()){
+            $User->delete();
+            $this->logout();
+        }
     }
 
     function deleteAllMessages($login){
-        $mr = new MessageRepository();
-        $mr->deleteAllByLoginName($login);
+        $User = new User();
+        $User->setLogin($login);
+        if(isset($_COOKIE['loginHash'])){
+            $User->setLoginHash($_COOKIE['loginHash']);
+        }
+        if($User->checkLoginValid()){
+            $mr = new MessageRepository();
+            $mr->deleteAllByLoginName($login);
+        }
         header('Location: '.self::SITE_URL);
     }
 
